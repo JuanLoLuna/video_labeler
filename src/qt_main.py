@@ -4,8 +4,9 @@ import sys
 
 import cv2
 
-from PySide6.QtCore import Qt, QTimer
+from PySide6.QtCore import Qt, QTimer, QUrl
 from PySide6.QtGui import QBrush, QColor, QImage, QPixmap
+from PySide6.QtMultimedia import QAudioOutput, QMediaPlayer
 from PySide6.QtWidgets import (
     QApplication,
     QComboBox,
@@ -77,6 +78,10 @@ class MainWindow(QMainWindow):
         self.total_frames = 0
         self.fps = 30.0
         self.current_frame_idx = 0
+        self.audio_path: str | None = None
+        self.audio_output = QAudioOutput(self)
+        self.audio_player = QMediaPlayer(self)
+        self.audio_player.setAudioOutput(self.audio_output)
 
         self.annotations: list[dict[str, int | str]] = []
         self.temp_start: int | None = None
@@ -220,18 +225,25 @@ class MainWindow(QMainWindow):
         self.annotation_list = QListWidget()
         main_layout.addWidget(self.annotation_list, stretch=1)
 
-        bottom_layout = QHBoxLayout()
-        self.open_button = QPushButton("Open Video")
+        export_layout = QHBoxLayout()
         self.delete_button = QPushButton("Delete Selected")
         self.export_button = QPushButton("Export CSV")
+        export_layout.addWidget(self.delete_button)
+        export_layout.addWidget(self.export_button)
+        export_layout.addStretch(1)
+        main_layout.addLayout(export_layout)
+
+        file_layout = QHBoxLayout()
+        self.open_button = QPushButton("Open Video")
+        self.open_audio_button = QPushButton("Open Audio WAV")
+        self.audio_status_label = QLabel("No audio loaded.")
         self.exit_button = QPushButton("Exit")
 
-        bottom_layout.addWidget(self.open_button)
-        bottom_layout.addWidget(self.delete_button)
-        bottom_layout.addWidget(self.export_button)
-        bottom_layout.addStretch(1)
-        bottom_layout.addWidget(self.exit_button)
-        main_layout.addLayout(bottom_layout)
+        file_layout.addWidget(self.open_button)
+        file_layout.addWidget(self.open_audio_button)
+        file_layout.addWidget(self.audio_status_label, stretch=1)
+        file_layout.addWidget(self.exit_button)
+        main_layout.addLayout(file_layout)
 
         self.prev_button.clicked.connect(self.on_prev)
         self.back_second_button.clicked.connect(self.on_back_second)
@@ -256,6 +268,7 @@ class MainWindow(QMainWindow):
         self.export_button.clicked.connect(self.on_export_csv)
         self.exit_button.clicked.connect(self.close)
         self.open_button.clicked.connect(self.on_open_video)
+        self.open_audio_button.clicked.connect(self.on_open_audio)
 
     def _show_frame(self, frame_idx: int):
         if self.cap is None:
@@ -294,6 +307,16 @@ class MainWindow(QMainWindow):
             f"Frame: {self.current_frame_idx + 1} / {self.total_frames}"
         )
 
+    def _audio_position_ms_for_frame(self, frame_idx: int) -> int:
+        if self.fps <= 0:
+            return 0
+        return max(0, int(round((frame_idx / self.fps) * 1000)))
+
+    def _sync_audio_to_frame(self, frame_idx: int):
+        if self.audio_path is None:
+            return
+        self.audio_player.setPosition(self._audio_position_ms_for_frame(frame_idx))
+
     def _start_playback(self, end_frame: int | None = None):
         if self.cap is None:
             QMessageBox.information(self, "No video", "Open a video before starting playback.")
@@ -302,6 +325,9 @@ class MainWindow(QMainWindow):
         self.playback_end_frame = end_frame
         self.playing = True
         self.play_button.setText("Pause")
+        self._sync_audio_to_frame(self.current_frame_idx)
+        if self.audio_path is not None:
+            self.audio_player.play()
         interval_ms = int(1000 / self.fps) if self.fps > 0 else 33
         self.timer.start(interval_ms)
 
@@ -310,25 +336,39 @@ class MainWindow(QMainWindow):
         self.playback_end_frame = None
         self.play_button.setText("Play")
         self.timer.stop()
+        self.audio_player.pause()
 
     def on_slider_changed(self, value: int):
+        was_playing = self.playing
+        playback_end_frame = self.playback_end_frame
+        if was_playing:
+            self._stop_playback()
         self._show_frame(value)
+        self._sync_audio_to_frame(value)
+        if was_playing:
+            self._start_playback(end_frame=playback_end_frame)
 
     def on_prev(self):
         new_idx = max(0, self.current_frame_idx - 1)
         self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
 
     def on_back_second(self):
         step = self._one_second_step()
-        self._show_frame(max(0, self.current_frame_idx - step))
+        new_idx = max(0, self.current_frame_idx - step)
+        self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
 
     def on_next(self):
         new_idx = min(self.total_frames - 1, self.current_frame_idx + 1)
         self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
 
     def on_forward_second(self):
         step = self._one_second_step()
-        self._show_frame(min(self.total_frames - 1, self.current_frame_idx + step))
+        new_idx = min(self.total_frames - 1, self.current_frame_idx + step)
+        self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
 
     def _one_second_step(self) -> int:
         return max(1, int(round(self.fps)) if self.fps > 0 else 30)
@@ -367,6 +407,22 @@ class MainWindow(QMainWindow):
         )
         if path:
             self.load_video(path)
+
+    def on_open_audio(self):
+        initial_dir = os.path.dirname(self.video_path) if self.video_path else ""
+        path, _ = QFileDialog.getOpenFileName(
+            self,
+            "Open audio WAV",
+            initial_dir,
+            "WAV Files (*.wav);;Audio Files (*.wav *.mp3 *.m4a *.aac *.flac);;All Files (*)",
+        )
+        if not path:
+            return
+
+        self.audio_path = path
+        self.audio_player.setSource(QUrl.fromLocalFile(path))
+        self._sync_audio_to_frame(self.current_frame_idx)
+        self.audio_status_label.setText(f"Audio: {os.path.basename(path)}")
 
     def _clear_temp_marks(self):
         self.temp_start = None
@@ -845,6 +901,7 @@ class MainWindow(QMainWindow):
         self.temp_end = end_frame
         self._update_mark_status()
         self._show_frame(start_frame)
+        self._sync_audio_to_frame(start_frame)
 
     def on_play_selected_range(self):
         bounds = self._selected_range_bounds()
@@ -856,6 +913,7 @@ class MainWindow(QMainWindow):
         self.temp_end = end_frame
         self._update_mark_status()
         self._show_frame(start_frame)
+        self._sync_audio_to_frame(start_frame)
         self._start_playback(end_frame=end_frame)
 
     def closeEvent(self, event):
