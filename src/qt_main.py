@@ -175,9 +175,11 @@ class MainWindow(QMainWindow):
 
         controls_layout = QHBoxLayout()
         self.prev_button = QPushButton("Prev")
+        self.back_minute_button = QPushButton("-60s")
         self.back_second_button = QPushButton("-1s")
         self.play_button = QPushButton("Play")
         self.forward_second_button = QPushButton("+1s")
+        self.forward_minute_button = QPushButton("+60s")
         self.next_button = QPushButton("Next")
 
         self.frame_slider = QSlider(Qt.Orientation.Horizontal)
@@ -186,9 +188,11 @@ class MainWindow(QMainWindow):
         self.frame_slider.setValue(0)
 
         controls_layout.addWidget(self.prev_button)
+        controls_layout.addWidget(self.back_minute_button)
         controls_layout.addWidget(self.back_second_button)
         controls_layout.addWidget(self.play_button)
         controls_layout.addWidget(self.forward_second_button)
+        controls_layout.addWidget(self.forward_minute_button)
         controls_layout.addWidget(self.next_button)
         controls_layout.addWidget(self.frame_slider)
         self.frame_position_label = QLabel("Frame: – / –")
@@ -278,9 +282,11 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(file_layout)
 
         self.prev_button.clicked.connect(self.on_prev)
+        self.back_minute_button.clicked.connect(self.on_back_minute)
         self.back_second_button.clicked.connect(self.on_back_second)
         self.next_button.clicked.connect(self.on_next)
         self.forward_second_button.clicked.connect(self.on_forward_second)
+        self.forward_minute_button.clicked.connect(self.on_forward_minute)
         self.play_button.clicked.connect(self.on_play_pause)
         self.frame_slider.valueChanged.connect(self.on_slider_changed)
 
@@ -386,6 +392,12 @@ class MainWindow(QMainWindow):
         self._show_frame(new_idx)
         self._sync_audio_to_frame(new_idx)
 
+    def on_back_minute(self):
+        step = self._seconds_step(60)
+        new_idx = max(0, self.current_frame_idx - step)
+        self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
+
     def on_back_second(self):
         step = self._one_second_step()
         new_idx = max(0, self.current_frame_idx - step)
@@ -403,8 +415,18 @@ class MainWindow(QMainWindow):
         self._show_frame(new_idx)
         self._sync_audio_to_frame(new_idx)
 
+    def on_forward_minute(self):
+        step = self._seconds_step(60)
+        new_idx = min(self.total_frames - 1, self.current_frame_idx + step)
+        self._show_frame(new_idx)
+        self._sync_audio_to_frame(new_idx)
+
     def _one_second_step(self) -> int:
-        return max(1, int(round(self.fps)) if self.fps > 0 else 30)
+        return self._seconds_step(1)
+
+    def _seconds_step(self, seconds: int) -> int:
+        fps = self.fps if self.fps > 0 else 30
+        return max(1, int(round(fps * seconds)))
 
     def on_play_pause(self):
         if self.playing:
@@ -695,8 +717,8 @@ class MainWindow(QMainWindow):
             else "NO END"
         )
         return (
-            f"{index:03d}: start {start_text}   "
-            f"end {end_text}"
+            f"{index:03d}: {label_range.label}   "
+            f"start {start_text} -> end {end_text}"
         )
 
     def on_selected_adl_changed(self, _index: int):
@@ -732,7 +754,7 @@ class MainWindow(QMainWindow):
             )
             self.imported_range_list.setCurrentRow(0)
         elif adl_text:
-            self.import_status_label.setText(f"{adl_text}: no complete start/end ranges")
+            self.import_status_label.setText(f"{adl_text}: no imported ranges")
             self.start_frame_input.clear()
             self.end_frame_input.clear()
 
