@@ -19,6 +19,7 @@ from PySide6.QtWidgets import (
     QMainWindow,
     QMessageBox,
     QPushButton,
+    QScrollArea,
     QSlider,
     QVBoxLayout,
     QWidget,
@@ -155,14 +156,20 @@ class MainWindow(QMainWindow):
         self._update_frame_position_label()
 
     def _build_ui(self):
-        central = QWidget(self)
-        self.setCentralWidget(central)
+        scroll_area = QScrollArea(self)
+        scroll_area.setWidgetResizable(True)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        self.setCentralWidget(scroll_area)
+
+        central = QWidget()
+        scroll_area.setWidget(central)
         main_layout = QVBoxLayout(central)
 
         self.video_label = QLabel("No video loaded")
         self.video_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.video_label.setStyleSheet("background-color: #222; color: #ddd;")
-        self.video_label.setMinimumSize(640, 360)
+        self.video_label.setMinimumSize(480, 270)
         self.video_label.setScaledContents(True)
         main_layout.addWidget(self.video_label, stretch=4)
 
