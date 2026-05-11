@@ -43,6 +43,8 @@ except ImportError:
 
 
 DEFAULT_VIDEO_PATH = ""
+ADL_STUDY = "ADL"
+OCD_SLEEVE_STUDY = "OCD Sleeve"
 ADL_LABELS = [
     ("1", "Pick up coins from purses"),
     ("2", "Pick up wooden blocks"),
@@ -61,6 +63,21 @@ ADL_LABELS = [
     ("15", "Dynamometer hand grip baseline"),
     ("16", "Dynamometer hand grip active"),
 ]
+OCD_SLEEVE_LABELS = [
+    ("symptom_provocation", "Symptom provocation"),
+    ("relax", "Relax"),
+    ("compulsion", "Compulsion"),
+    ("control", "Control"),
+]
+STUDY_LABELS = {
+    ADL_STUDY: ADL_LABELS,
+    OCD_SLEEVE_STUDY: OCD_SLEEVE_LABELS,
+}
+LABEL_TO_STUDY = {
+    label: study
+    for study, labels in STUDY_LABELS.items()
+    for _label_id, label in labels
+}
 
 
 class MainWindow(QMainWindow):
@@ -171,20 +188,28 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.frame_position_label)
         main_layout.addLayout(controls_layout, stretch=0)
 
-        anno_layout = QHBoxLayout()
+        mark_layout = QHBoxLayout()
         self.start_button = QPushButton("Mark Start")
         self.end_button = QPushButton("Mark End")
+        mark_layout.addWidget(self.start_button)
+        mark_layout.addWidget(self.end_button)
+        mark_layout.addStretch(1)
+        main_layout.addLayout(mark_layout)
+
+        label_layout = QHBoxLayout()
         self.add_label_button = QPushButton("Add Label")
+        self.study_selector = QComboBox()
+        self.study_selector.addItems(list(STUDY_LABELS))
 
         self.label_dropdown = QComboBox()
-        for label_id, label in ADL_LABELS:
-            self.label_dropdown.addItem(label, (label_id, label))
+        self._populate_label_dropdown(ADL_STUDY)
 
-        anno_layout.addWidget(self.start_button)
-        anno_layout.addWidget(self.end_button)
-        anno_layout.addWidget(self.label_dropdown)
-        anno_layout.addWidget(self.add_label_button)
-        main_layout.addLayout(anno_layout)
+        label_layout.addWidget(QLabel("Study"))
+        label_layout.addWidget(self.study_selector)
+        label_layout.addWidget(QLabel("Label"))
+        label_layout.addWidget(self.label_dropdown, stretch=2)
+        label_layout.addWidget(self.add_label_button)
+        main_layout.addLayout(label_layout)
 
         self.mark_status_label = QLabel("Start: –   End: –")
         main_layout.addWidget(self.mark_status_label)
@@ -203,7 +228,7 @@ class MainWindow(QMainWindow):
         main_layout.addLayout(import_button_layout)
 
         review_layout = QHBoxLayout()
-        review_layout.addWidget(QLabel("ADL"))
+        review_layout.addWidget(QLabel("Label"))
         self.adl_selector = QComboBox()
         review_layout.addWidget(self.adl_selector, stretch=2)
         review_layout.addWidget(QLabel("Start frame"))
@@ -255,6 +280,7 @@ class MainWindow(QMainWindow):
         self.start_button.clicked.connect(self.on_mark_start)
         self.end_button.clicked.connect(self.on_mark_end)
         self.add_label_button.clicked.connect(self.on_add_label)
+        self.study_selector.currentTextChanged.connect(self.on_study_changed)
 
         self.import_labels_button.clicked.connect(self.on_import_labels_csv)
         self.load_selected_range_button.clicked.connect(self.on_load_selected_range)
@@ -434,6 +460,23 @@ class MainWindow(QMainWindow):
         end_txt = str(self.temp_end) if self.temp_end is not None else "–"
         self.mark_status_label.setText(f"Start: {start_txt}   End: {end_txt}")
 
+    def _populate_label_dropdown(self, study: str):
+        current_label_key = self.label_dropdown.currentData()
+        self.label_dropdown.blockSignals(True)
+        self.label_dropdown.clear()
+        for label_id, label in STUDY_LABELS.get(study, ADL_LABELS):
+            self.label_dropdown.addItem(label, (label_id, label))
+        self.label_dropdown.blockSignals(False)
+
+        if isinstance(current_label_key, tuple):
+            for index in range(self.label_dropdown.count()):
+                if self.label_dropdown.itemData(index) == current_label_key:
+                    self.label_dropdown.setCurrentIndex(index)
+                    return
+
+    def on_study_changed(self, study: str):
+        self._populate_label_dropdown(study)
+
     def on_mark_start(self):
         self.temp_start = self.current_frame_idx
         self._update_mark_status()
@@ -551,6 +594,7 @@ class MainWindow(QMainWindow):
         self.imported_events = events
         self.imported_ranges = ranges
         self._populate_import_controls()
+        self._set_manual_study(self._infer_imported_study())
 
         summary = (
             f"Imported {len(events)} markers and {len(ranges)} ranges from "
@@ -579,7 +623,7 @@ class MainWindow(QMainWindow):
         self.adl_selector.clear()
 
         seen_adls: set[tuple[str, str]] = set()
-        for adl_key in ADL_LABELS:
+        for adl_key in self._import_label_options():
             self.adl_selector.addItem(self._format_adl_text(*adl_key), adl_key)
             seen_adls.add(adl_key)
 
@@ -602,6 +646,30 @@ class MainWindow(QMainWindow):
             self.imported_range_list.clear()
             self.start_frame_input.clear()
             self.end_frame_input.clear()
+
+    def _import_label_options(self) -> list[tuple[str, str]]:
+        study = self._infer_imported_study()
+        return list(STUDY_LABELS.get(study, ADL_LABELS))
+
+    def _infer_imported_study(self) -> str:
+        for label_range in self.imported_ranges:
+            study = LABEL_TO_STUDY.get(label_range.label)
+            if study:
+                return study
+
+        if self.imported_csv_path:
+            csv_name = os.path.basename(self.imported_csv_path).lower()
+            if "ocd" in csv_name or "sleeve" in csv_name:
+                return OCD_SLEEVE_STUDY
+
+        return ADL_STUDY
+
+    def _set_manual_study(self, study: str):
+        for index in range(self.study_selector.count()):
+            if self.study_selector.itemText(index) == study:
+                self.study_selector.setCurrentIndex(index)
+                return
+        self._populate_label_dropdown(study)
 
     def _format_adl_text(self, adl_id: str, label: str) -> str:
         if adl_id:
