@@ -173,6 +173,17 @@ class MainWindow(QMainWindow):
         self.video_label.setScaledContents(True)
         main_layout.addWidget(self.video_label, stretch=4)
 
+        self.frame_slider = QSlider(Qt.Orientation.Horizontal)
+        self.frame_slider.setMinimum(0)
+        self.frame_slider.setMaximum(max(0, self.total_frames - 1))
+        self.frame_slider.setValue(0)
+
+        slider_layout = QHBoxLayout()
+        slider_layout.addWidget(self.frame_slider)
+        self.frame_position_label = QLabel("Frame: – / –")
+        slider_layout.addWidget(self.frame_position_label)
+        main_layout.addLayout(slider_layout, stretch=0)
+
         controls_layout = QHBoxLayout()
         self.prev_button = QPushButton("Prev")
         self.back_minute_button = QPushButton("-60s")
@@ -182,11 +193,6 @@ class MainWindow(QMainWindow):
         self.forward_minute_button = QPushButton("+60s")
         self.next_button = QPushButton("Next")
 
-        self.frame_slider = QSlider(Qt.Orientation.Horizontal)
-        self.frame_slider.setMinimum(0)
-        self.frame_slider.setMaximum(max(0, self.total_frames - 1))
-        self.frame_slider.setValue(0)
-
         controls_layout.addWidget(self.prev_button)
         controls_layout.addWidget(self.back_minute_button)
         controls_layout.addWidget(self.back_second_button)
@@ -194,9 +200,7 @@ class MainWindow(QMainWindow):
         controls_layout.addWidget(self.forward_second_button)
         controls_layout.addWidget(self.forward_minute_button)
         controls_layout.addWidget(self.next_button)
-        controls_layout.addWidget(self.frame_slider)
-        self.frame_position_label = QLabel("Frame: – / –")
-        controls_layout.addWidget(self.frame_position_label)
+        controls_layout.addStretch(1)
         main_layout.addLayout(controls_layout, stretch=0)
 
         mark_layout = QHBoxLayout()
