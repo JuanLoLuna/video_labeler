@@ -65,10 +65,10 @@ ADL_LABELS = [
     ("16", "Dynamometer hand grip active"),
 ]
 OCD_SLEEVE_LABELS = [
-    ("symptom_provocation", "Symptom provocation"),
-    ("relax", "Relax"),
-    ("compulsion", "Compulsion"),
-    ("control", "Control"),
+    ("101", "Symptom provocation"),
+    ("102", "Relax"),
+    ("103", "Compulsion"),
+    ("104", "Control"),
 ]
 STUDY_LABELS = {
     ADL_STUDY: ADL_LABELS,
